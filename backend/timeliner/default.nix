@@ -1,7 +1,10 @@
 # timeliner nix library API:
 #
-#   timeliner.summary <shm-tarball>:
+#   timeliner.summary <path>:
 #     Generate summary data from a timeline for further processing.
+#
+#   timeliner.summaryTarball <url>:
+#     Like timeliner.summary but for remote tarball.
 #
 #   timeliner.visualize <summary>:
 #     Generate visualizations (PNG files) from timeline summary data.
@@ -17,16 +20,17 @@ with pkgs; with stdenv;
 
 let buildInputs = with rPackages; [ R dplyr readr ggplot2 bit64 mgcv ]; in
 
-{
-  # shmTarball: path to a tarball containing a Snabb shm folder.
-  summary = shmTarball: runCommand "timeline-summary" { inherit buildInputs; } ''
-      mkdir $out
-      tar xf ${shmTarball}
+rec {
+  # dir: path to a Snabb shm folder.
+  summary = dir: runCommand "timeline-summary" { inherit buildInputs; } ''
+      cd "${dir}"
       Rscript - <<EOF
         source("${./timeliner.R}")
-        summarize_timeline("engine/timeline", "$out")
+        summarize_timeline("engine/timeline", "${dir}")
       EOF
     '';
+  # url: path to a tarball containing a Snabb shm folder.
+  summaryTarball = url: summary (fetchTarball url);
   # summaryData: Output from the summary derivation above.
   visualize = summaryData: runCommand "timeline-visualization" { inherit buildInputs; } ''
     mkdir $out

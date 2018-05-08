@@ -21,7 +21,7 @@ plot_timeline_summary <- function(summarydir, outdir) {
   # Breaths
   br <- read_rds(file.path(summarydir, "breaths.rds.xz"))
   ggsave(file.path(outdir, "breath_duration.png"),   breath_duration(br))
-  ggsave(file.path(outdir, "breath_outliers.png"),   breath_outliers(br))
+  ggsave(file.path(outdir, "breath_outliers.png"),   breath_duration(br, plow=.95, phigh=1))
   ggsave(file.path(outdir, "breath_efficiency.png"), breath_efficiency(br))
   # Callbacks
   cb <- read_rds(file.path(summarydir, "callbacks.rds.xz"))
@@ -161,74 +161,195 @@ save_data <- function(data, filename) {
 # Create a data frame with one row for each breath.
 breaths <- function(tl) {
   tl %>% 
-    filter(grepl("breath_end|breath_start", event)) %>%
+    filter(grepl("breath_start|breath_end", event)) %>%
     mutate(breath = arg0,
-           total_packets = arg1, total_bytes = arg2, total_ethbits = arg3,
-           packets = arg1-lag(arg1), bytes = arg2-lag(arg2), ethbits = arg3-lag(arg3)) %>%
+           total_packets = lag(arg1), total_bytes = lag(arg2), total_ethbits = lag(arg3),
+           packets = arg1, bytes = arg2) %>%
     filter(grepl("breath_end", event)) %>%
     na.omit() %>%
     select(tsc, unixtime, cycles, numa, core,
-           breath, total_packets, total_bytes, total_ethbits, packets, bytes, ethbits)
+           breath, total_packets, total_bytes, total_ethbits, packets, bytes)
 }
 
 # Create a data frame with one row for each app callback.
 callbacks <- function(tl) {
   tl %>% filter(grepl("^app.(pull|push)", event)) %>%
     mutate(inpackets = arg0 - lag(arg0), inbytes = arg1 - lag(arg1),
-           outpackets = arg2 - lag(arg2), outbytes = arg3 - lag(arg3)) %>%
-    mutate(packets = pmax(inpackets, outpackets), bytes = pmax(inbytes + outbytes)) %>%
+           outpackets = arg2 - lag(arg2), outbytes = arg3 - lag(arg3),
+           dropped = arg4 - lag(arg4), dropbytes = arg5 - lag(arg5)) %>%
+    mutate(packets = pmax(inpackets, outpackets), bytes = pmax(inbytes, outbytes)) %>%
     filter(grepl("^app.(pushed|pulled)", event)) %>%
     na.omit() %>%
     select(tsc, unixtime, cycles, numa, core,
-           event, packets, bytes, inpackets, inbytes, outpackets, outbytes)
+           event, packets, bytes,
+           inpackets, inbytes, outpackets, outbytes, dropped, dropbytes)
 }
 
 # ------------------------------------------------------------
-# Visualizing the callbacks summary
+# Visualizing the timeline summary (toolkit)
 # ------------------------------------------------------------
 
-breath_outliers <- function(br, cutoff=1000000) {
-  d <- filter(br, cycles>cutoff)
+# Show various metrics for recorded breaths over time from start to end (in
+# seconds starting from zero), summarised to N points.
+breath_history <- function(br=breath_summary, start=0, end=F, points=100) {
+  hist <- br %>%
+    mutate(t = (unixtime - first(unixtime)) / 1e9) %>%
+    filter(t >= start & (!end | t <= end)) %>%
+    mutate(Gbps = (total_ethbits - lag(total_ethbits)) / (t - lag(t)) / 1e9,
+           Mpps = (total_packets - lag(total_packets)) / (t - lag(t)) / 1e6,
+           usec = (unixtime - lag(unixtime)) / (breath - lag(breath)) * 1e-3) %>%
+    na.omit() %>%
+    quantize(points)
+  nonzero <- hist %>%
+    filter(packets>0) %>%
+    mutate(cycles = pmin(cycles / packets, quantile(.$cycles / .$packets, .95)))
+  metrics <- bind_rows(
+    summarise_metric(hist, var="Gbps", metric="Gbps (freed)"),
+    summarise_metric(hist, var="Mpps", metric="Mpps (freed)"),
+    summarise_metric(nonzero, var="cycles",  metric="cpp (<=p95)"),
+    summarise_metric(hist, var="packets", metric="packets/breath"),
+    summarise_metric(nonzero, var="bytes", metric="bytes/packet"),
+    summarise_metric(hist, var="usec", metric="usec/breath")
+  )
+  ggplot(metrics, aes(x = t, color = metric, fill = metric)) +
+    scale_y_continuous(labels = scales::comma) +
+    scale_x_continuous(labels = scales::comma) +
+    facet_wrap(~ metric, scales="free_y", strip.position="right", ncol = 1) +
+    labs(y = "", x = "time (s)") +
+    geom_line(aes(y = mean, linetype="mean")) +
+    geom_line(aes(y = median, linetype="median")) +
+    geom_ribbon(aes(ymax = q95, ymin = q05, alpha = "5th-95th"), color = NA) +
+    geom_ribbon(aes(ymax = q75, ymin = q25, alpha = "25th-75th"), color = NA) +
+    theme(legend.position="top") +
+    guides(color=FALSE, fill=FALSE) +
+    scale_alpha_manual(name="Percentiles", values=c("5th-95th"=0.1, "25th-75th"=0.2)) +
+    scale_linetype_manual(name="Averages", values=c(mean="solid", median="dotted"))
+}
+
+# Show various metrics for recorded callbacks that match a pattern over time
+# from start to end (in seconds starting from zero), summarised to N points.
+callback_history <- function(cb=callback_summary, pattern="",
+                             start=0, end=F, points=100) {
+  hist <- cb %>%
+    mutate(t = (unixtime - first(unixtime)) / 1e9) %>%
+    filter(t >= start & (!end | t <= end) & grepl(pattern, event)) %>%
+    na.omit() %>%
+    quantize(points) %>%
+    group_by(t, event)
+  nonzero <- hist %>%
+    filter(packets>0) %>%
+    group_by(event) %>%
+    mutate(cycles = pmin(cycles / packets, quantile(.$cycles / .$packets, .95)),
+           bytes = bytes / packets) %>%
+    group_by(t, event)
+  metrics <- bind_rows(
+    summarise_metric(nonzero, var="cycles", metric="cycles/packet (<=p95)"),
+    summarise_metric(hist, var="packets", metric = "packets/callback"),
+    summarise_metric(nonzero, var="bytes", metric="bytes/packet"),
+    summarise_metric(hist, var="dropped", metric = "drops/callback")
+  )
+  ggplot(metrics, aes(x = t, color = metric, fill = metric)) +
+    scale_y_continuous(labels = scales::comma) +
+    scale_x_continuous(labels = scales::comma) +
+    facet_grid(metric ~ event, scales="free_y") +
+    labs(y = "", x = "time (s)") +
+    geom_line(aes(y = mean, linetype="mean")) +
+    geom_line(aes(y = median, linetype="median")) +
+    geom_ribbon(aes(ymax = q95, ymin = q05, alpha = "5th-95th"), color = NA) +
+    geom_ribbon(aes(ymax = q75, ymin = q25, alpha = "25th-75th"), color = NA) +
+    theme(legend.position="top") +
+    guides(color=FALSE, fill=FALSE) +
+    scale_alpha_manual(name="Percentiles", values=c("5th-95th"=0.1, "25th-75th"=0.2)) +
+    scale_linetype_manual(name="Averages", values=c(mean="solid", median="dotted"))
+}
+
+# Show breath duration in cycles relative to burst size for breaths recorded
+# from start to end (in seconds starting from zero), excluding breaths outside
+# the upper and lower percentiles phigh/plow.
+breath_duration <- function (br=breath_summary,
+                             start=0, end=F, phigh=.95, plow=0) {
+  s <-  br %>%
+    mutate(t = (unixtime - first(unixtime)) / 1e9) %>%
+    filter(t >= start & (!end | t <= end))
+  high <- quantile(s$cycles, phigh)
+  low <- quantile(s$cycles, plow)
+  d <- filter(s, cycles >= low & cycles <= high)
   ggplot(d, aes(y = cycles, x = packets)) +
     scale_y_continuous(labels = scales::comma) +
-    geom_point(alpha=0.5, color="blue") +
-    labs(title = "Outlier breaths",
-           subtitle = paste("Breaths that took more than ", scales::comma(cutoff), " cycles ",
-                            "(", scales::percent(nrow(d)/nrow(br)), " of sampled breaths)", sep=""),
-           x = "packets processed in engine breath (burst size)")
-}
-
-breath_duration <- function(br, cutoff=1000000) {
-  d <- filter(br, cycles <= cutoff)
-  ggplot(d, aes(y = cycles, x = packets)) +
     geom_point(color="blue", alpha=0.25, shape=1) +
-    geom_smooth(se=F, weight=1, alpha=0.1) +
     labs(title = "Breath duration",
-         subtitle = "")
+         subtitle = paste("Breaths that took between ", scales::comma(low),
+                          " and ", scales::comma(high), " cycles ",
+                          "(", scales::percent(nrow(d)/nrow(s)),
+                          " of sampled breaths)", sep=""),
+         y = "cycles",
+         x = "packets processed in engine breath (burst size)")
 }
 
-breath_efficiency <- function(br, cutoff=5000) {
-  nonzero <- filter(br, packets>0)
-  d <- nonzero %>% filter(cycles/packets <= 5000)
-  pct <- (nrow(nonzero) - nrow(d)) / nrow(nonzero)
-  ggplot(d, aes(y = cycles / packets, x = packets)) +
+# Show breath efficiency in cycles/packet relative to burst size for breaths
+# recorded from start to end (in seconds starting from zero), excluding breaths
+# outside the upper and lower percentiles phigh/plow.
+breath_efficiency <- function (br=breath_summary, start=0,
+                               end=F, phigh=.95, plow=0) {
+  s <-  br %>%
+    mutate(t = (unixtime - first(unixtime)) / 1e9, cpp = cycles / packets) %>%
+    filter(packets > 0 & t >= start & (!end | t <= end))
+  high <- quantile(s$cpp, phigh)
+  low <- quantile(s$cpp, plow)
+  d <- filter(s, cpp >= low & cpp <= high)
+  ggplot(d, aes(y = cpp, x = packets)) +
+    scale_y_continuous(labels = scales::comma) +
     geom_point(color="blue", alpha=0.25, shape=1) +
     geom_smooth(se=F, weight=1, alpha=0.1) +
-    labs(title = "Engine breath efficiency",
-         subtitle = paste("Processing cost in cycles per packet ",
-                          "(ommitting ", scales::percent(pct), " outliers above ", scales::comma(cutoff), " cycles/packet cutoff)",
-                          sep=""),
+    labs(subtitle = paste("Breaths that took between ", scales::comma(low),
+                          " and ", scales::comma(high), " cycles/packet ",
+                          "(", scales::percent(nrow(d)/nrow(s)),
+                          " of sampled breaths)", sep=""),
          y = "cycles/packet",
          x = "packets processed in engine breath (burst size)")
 }
 
-callback_efficiency <- function(cb) {
-  d <- cb %>%
-        mutate(packets = pmax(inpackets, outpackets)) %>%
-        filter(packets>0)
-  ggplot(d, aes(y = pmin(1000, cycles/packets), x = packets)) +
+# Show callback efficiency in cycles/packet relative to burst size for
+# callbacks that match a pattern recorded from start to end (in seconds
+# starting from zero), excluding callbacks outside the upper and lower
+# percentiles phigh/plow.
+callback_efficiency <- function (cb=callback_summary, pattern="",
+                                 start=0, end=F, phigh=.95, plow=0) {
+  s <-  cb %>%
+    mutate(t = (unixtime - first(unixtime)) / 1e9, cpp = cycles / packets) %>%
+    filter(grepl(pattern, event) & packets > 0 & t >= start & (!end | t <= end))
+  high <- quantile(s$cpp, phigh)
+  low <- quantile(s$cpp, plow)
+  d <- filter(s, cpp >= low & cpp <= high)
+  ggplot(d, aes(y = cpp, x = packets)) +
+    scale_y_continuous(labels = scales::comma) +
     geom_point(color="blue", alpha=0.25, shape=1) +
     geom_smooth(se=F, weight=1, alpha=0.1) +
-    facet_wrap(~ event)
+    facet_wrap(~ event) +
+    labs(subtitle = paste("Callbacks that took between ", scales::comma(low),
+                          " and ", scales::comma(high), " cycles/packet ",
+                          "(", scales::percent(nrow(d)/nrow(s)),
+                          " of sampled callbacks)", sep=""),
+         y = "cycles/packet",
+         x = "packets processed in callback (burst size)")
 }
 
+# ------------------------------------------------------------
+# Utilities (toolkit)
+# ------------------------------------------------------------
+
+quantize <- function (df, steps) {
+  step <- max(0.0001, (max(df$t) - min(df$t)) / steps)
+  df %>% mutate(t = round(t / step) * step) %>% group_by(t)
+}
+
+summarise_metric <- function (df, var, metric) {
+  df %>%
+    summarise(metric = metric,
+              mean = mean(!! sym(var)),
+              median = median(!! sym(var)),
+              q75 = quantile(!! sym(var), .75),
+              q25 = quantile(!! sym(var), .25),
+              q95 = quantile(!! sym(var), .95),
+              q05 = quantile(!! sym(var), .05))
+}
