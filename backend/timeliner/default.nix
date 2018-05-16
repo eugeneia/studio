@@ -6,10 +6,10 @@
 #   timeliner.summaryTarball <url>:
 #     Like timeliner.summary but for remote tarball.
 #
-#   timeliner.visualize <summary>:
-#     Generate visualizations (PNG files) from timeline summary data.
+#   timeliner.evaluate <summary> <script>:
+#     Evaluate R script on summary.
 #
-# The output of timeliner.summary is the input to timeliner.visualize.
+# The output of timeliner.summary is the input to timeliner.evaluate
 # The processing is split into two parts so that the summary data can
 # be archived separately from the timeline files (e.g. to save space
 # by keeping only the summary data and discarding the full timeline.)
@@ -18,7 +18,7 @@
 
 with pkgs; with stdenv;
 
-let buildInputs = with rPackages; [ R dplyr readr ggplot2 bit64 mgcv ]; in
+let buildInputs = with rPackages; [ R dplyr readr ggplot2 bit64 mgcv rlang ]; in
 
 rec {
   # dir: path to a Snabb shm folder.
@@ -26,17 +26,18 @@ rec {
       cd "${dir}"
       Rscript - <<EOF
         source("${./timeliner.R}")
-        summarize_timeline("engine/timeline", "${dir}")
+        summarize_timeline("engine/timeline", "$out")
       EOF
     '';
   # url: path to a tarball containing a Snabb shm folder.
   summaryTarball = url: summary (fetchTarball url);
   # summaryData: Output from the summary derivation above.
-  visualize = summaryData: runCommand "timeline-visualization" { inherit buildInputs; } ''
+  process = {summaryData, script}: runCommand "timeline-visualization" { inherit buildInputs; } ''
     mkdir $out
     Rscript - <<EOF
       source("${./timeliner.R}")
-      plot_timeline_summary("${summaryData}", "$out")
+      load_timeline_summary("${summaryData}")
+      export_graph_or_data(source("${script}"), "$out")
     '';
 }
 

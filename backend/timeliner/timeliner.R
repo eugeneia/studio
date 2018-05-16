@@ -5,9 +5,10 @@ library(stringr)
 library(bit64)
 library(readr)
 library(ggplot2)
+library(rlang)
 
 # ------------------------------------------------------------
-# High-level API functions
+# High-level operational API functions
 # ------------------------------------------------------------
 
 # Load a binary timeline and save summary data for further processing.
@@ -15,17 +16,24 @@ summarize_timeline <- function(filename, outdir) {
   save_timeline_summaries(read_timeline(filename), outdir)
 }
 
-# Load summary data and save diverse visualizations.
-plot_timeline_summary <- function(summarydir, outdir) {
-  dir.create(outdir, recursive=T, showWarnings=F)
-  # Breaths
-  br <- read_rds(file.path(summarydir, "breaths.rds.xz"))
-  ggsave(file.path(outdir, "breath_duration.png"),   breath_duration(br))
-  ggsave(file.path(outdir, "breath_outliers.png"),   breath_duration(br, plow=.95, phigh=1))
-  ggsave(file.path(outdir, "breath_efficiency.png"), breath_efficiency(br))
-  # Callbacks
-  cb <- read_rds(file.path(summarydir, "callbacks.rds.xz"))
-  ggsave(file.path(outdir, "callback_efficiency.png"), callback_efficiency(cb))
+# Load timeline summaries into environment.
+breath_summary <- F
+callback_summary <- F
+load_timeline_summary <- function (summarydir) {
+  breath_summary <<- read_rds(file.path(summarydir, "breaths.rds.xz"))
+  callback_summary <<- read_rds(file.path(summarydir, "callbacks.rds.xz"))
+}
+
+# Export R data or a ggplot.
+export_graph_or_data <- function (result, outdir) {
+  if (is.data.frame(result$value)) {
+    # TSV, unquoted and without row names: GTInspector likes it this way.
+    write.table(result$value, file=file.path(outdir, "out.csv"),
+                sep="\t", quote=F, row.names=F)
+  } else {
+    ggsave(file.path(outdir, "out.png"), result$value,
+           width=20, height=16, units="cm", dpi=120)
+  }
 }
 
 # ------------------------------------------------------------
