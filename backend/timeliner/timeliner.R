@@ -12,12 +12,12 @@ library(rlang)
 # ------------------------------------------------------------
 
 # Load a binary timeline and save summary data for further processing.
-summarize_timeline <- function(filename, outdir) {
+summarize_timeline <- function(filename, outdir=".") {
   save_timeline_summaries(read_timeline(filename), outdir)
 }
 
 # Load timeline summaries into environment.
-load_timeline_summary <- function (summarydir) {
+load_timeline_summary <- function (summarydir=".") {
   breath_summary <<- read_rds(file.path(summarydir, "breaths.rds.xz"))
   callback_summary <<- read_rds(file.path(summarydir, "callbacks.rds.xz"))
   event_summary <<- read_rds(file.path(summarydir, "events.rds.xz"))
@@ -48,7 +48,7 @@ read_timeline <- function(filename) {
   tl$cycles <- calculate_cycles(tl)
   # Sort entries by unix time. Should roughly take care of log wrap-around.
   # See FIXME comment in unixtime() though.
-#  tl <- arrange(tl, unixtime)
+  tl <- arrange(tl, unixtime)
   tl
 }
 
@@ -176,7 +176,7 @@ breaths <- function(tl) {
            packets = arg1, bytes = arg2) %>%
     filter(grepl("breath_end", event)) %>%
     na.omit() %>%
-    select(tsc, unixtime, cycles, numa, core,
+    select(unixtime, cycles, numa, core,
            breath, total_packets, total_bytes, total_ethbits, packets, bytes)
 }
 
@@ -189,7 +189,7 @@ callbacks <- function(tl) {
     mutate(packets = pmax(inpackets, outpackets), bytes = pmax(inbytes, outbytes)) %>%
     filter(grepl("^app.(pushed|pulled)", event)) %>%
     na.omit() %>%
-    select(tsc, unixtime, cycles, numa, core,
+    select(unixtime, cycles, numa, core,
            event, packets, bytes,
            inpackets, inbytes, outpackets, outbytes, dropped, dropbytes)
 }
