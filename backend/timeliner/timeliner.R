@@ -101,7 +101,7 @@ read_binary_timeline <- function(filename) {
     filter(message != "") %>%
     mutate(summary = str_extract(message, "^[^\n]+"),
            level = as.integer(str_extract(summary, "^[0-9]")),
-           event = gsub("^[0-9]\\|([^:]+):.*", "\\1", summary))
+           event = gsub("^[0-9],[0-9]\\|([^:]+):.*", "\\1", summary))
   # Combine messages with events
   left_join(tl, messages, by="msgid")
 }
@@ -136,12 +136,12 @@ calculate_unixtime <- function(tl) {
 calculate_cycles <- function(tl) {
   # reference timestamp accumulator for update inside closure.
   # index is log level and value is reference timestamp for delta.
-  ref <- as.numeric(rep(NA, 9))
+  ref <- as.numeric(rep(NA, 10))
   tscdelta <- function(level, time) {
     if (is.na(level)) { stop("level na") }
     if (is.na(time)) { stop("time na") }
-    delta <- time - ref[level]
-    ref[1:level] <<- time
+    delta <- time - ref[level+1]
+    ref[level+1:10] <<- time
     delta
   }
   mapply(tscdelta, tl$level, tl$tsc)
