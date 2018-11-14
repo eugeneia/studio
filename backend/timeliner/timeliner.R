@@ -17,11 +17,10 @@ summarize_timeline <- function(filename, outdir) {
 }
 
 # Load timeline summaries into environment.
-breath_summary <- F
-callback_summary <- F
 load_timeline_summary <- function (summarydir) {
   breath_summary <<- read_rds(file.path(summarydir, "breaths.rds.xz"))
   callback_summary <<- read_rds(file.path(summarydir, "callbacks.rds.xz"))
+  event_summary <<- read_rds(file.path(summarydir, "events.rds.xz"))
 }
 
 # Export R data or a ggplot.
@@ -157,8 +156,10 @@ save_timeline_summaries <- function(tl, outdir=".") {
   if (!dir.exists(outdir)) { dir.create(outdir, recursive=T) }
   br <- breaths(tl)
   cb <- callbacks(tl)
+  ev <- events(tl)
   save_data(br, file.path(outdir, "breaths.rds.xz"))
   save_data(cb, file.path(outdir, "callbacks.rds.xz"))
+  save_data(ev, file.path(outdir, "events.rds.xz"))
 }
 
 save_data <- function(data, filename) {
@@ -191,6 +192,14 @@ callbacks <- function(tl) {
     select(tsc, unixtime, cycles, numa, core,
            event, packets, bytes,
            inpackets, inbytes, outpackets, outbytes, dropped, dropbytes)
+}
+
+# Create a data frame with one row for each event (relative to breath_start.)
+events <- function(tl) {
+  tl %>%
+    filter(cycles > 0) %>%
+    select(unixtime, cycles, numa, core, event, level,
+           arg0, arg1, arg2, arg3, arg4, arg5)
 }
 
 # ------------------------------------------------------------
@@ -340,6 +349,27 @@ callback_efficiency <- function (cb=callback_summary, pattern="",
                           " of sampled callbacks)", sep=""),
          y = "cycles/packet",
          x = "packets processed in callback (burst size)")
+}
+
+# Show event lag (cycles since log entry of >= level) for events that match a
+# pattern recorded from start to end (in seconds starting from zero.)
+# Only includes events between minl and maxl (lag in cycles.)
+# Plots cycle latency on a log10 scale unless log=F.
+event_lag <- function (ev=event_summary, pattern="",
+                       start=0, end=F, minl=0, maxl=F, log=T) {
+  d <- ev %>%
+    mutate(t = (unixtime - first(unixtime)) / 1e9) %>%
+    filter(grepl(pattern, event) &
+             (is.na(t) | (t >= start & (!end | t <= end))) &
+             cycles >= minl & (!maxl | cycles <= maxl))
+  ggplot(d, aes(x = event, y = cycles, color = level)) +
+    (if (log) { scale_y_log10(labels=scales::comma) }
+         else { scale_y_continuous(labels=scales::comma)}) +
+    geom_boxplot() +
+    coord_flip() +
+    theme(legend.position="bottom") +
+    labs(subtitle = "Event lag (relative to last event >= level)",
+         y = "cycles (lag)")
 }
 
 # ------------------------------------------------------------
