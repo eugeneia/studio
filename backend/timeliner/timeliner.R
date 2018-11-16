@@ -342,7 +342,7 @@ callback_efficiency <- function (cb=callback_summary, pattern="",
     scale_y_continuous(labels = scales::comma) +
     geom_point(color="blue", alpha=0.25, shape=1) +
     geom_smooth(se=F, weight=1, alpha=0.1) +
-    facet_wrap(~ event) +
+    facet_wrap(~ event, scales="free") +
     labs(subtitle = paste("Callbacks that took between ", scales::comma(low),
                           " and ", scales::comma(high), " cycles/packet ",
                           "(", scales::percent(nrow(d)/nrow(s)),
