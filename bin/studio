@@ -33,12 +33,12 @@ fi
 nixopts="--pure -j 10"
 
 runstudio() {
-  attr="$1"
-  cmd="$2"
+  attr="$1"; shift
+  cmd="$@"
   export TMPDIR=$(mktemp -d)
   chmod 755 $TMPDIR
   trap "rm -rf $TMPDIR" EXIT
-  nix-shell $nixopts --run "STUDIO_PATH=$studio $cmd" -E - <<EOF
+   nix-shell $nixopts --run "STUDIO_PATH=$studio $cmd" -E - <<EOF
     with import $studio;
     runCommandNoCC "studio" {
       nativeBuildInputs = [ nixUnstable xorg.xauth perl disasm $attr ];
@@ -48,7 +48,8 @@ EOF
 
 case "$1" in
     vnc)
-        runstudio studio.studio-vnc studio-vnc
+        shift
+        runstudio studio.studio-vnc studio-vnc "$@"
         ;;
     x11)
         runstudio studio.studio-x11 studio-x11
