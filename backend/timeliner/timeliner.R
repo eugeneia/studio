@@ -48,7 +48,7 @@ read_timeline <- function(filename) {
   tl$cycles <- calculate_cycles(tl)
   # Sort entries by unix time. Should roughly take care of log wrap-around.
   # See FIXME comment in unixtime() though.
-  tl <- arrange(tl, unixtime)
+  #tl <- arrange(tl, unixtime)
   tl
 }
 
