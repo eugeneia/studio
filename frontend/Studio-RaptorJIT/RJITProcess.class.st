@@ -148,6 +148,11 @@ RJITProcess >> gtInspectorVMProfilesIn: composite [
 
 ]
 
+{ #category : #accesing }
+RJITProcess >> path [
+	^ path
+]
+
 { #category : #accessing }
 RJITProcess >> totalSamples [
 	vmprofiles isEmpty ifTrue: [ ^0 ].

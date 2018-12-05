@@ -31,7 +31,7 @@ StudioInspector >> go: code [
 				extent: self window extent * 0.9.
 			^ nil ].
 		job title: 'Studio frontend is analyzing data from the backend'.
-		^ RJITProcess new fromPath: product firstOutput.
+		^ RJITProcesses new fromPath: product firstOutput.
 	] asJob run.
 
 ]
