@@ -10,10 +10,12 @@ with pkgs; with stdenv;
 
 rec {
   processDirectory = dir: runCommand "snabb-directory" { inherit dir; } ''
-    [ -f $dir/audit.log ] || (echo "error: ./audit.log not found" >&2; exit 1)
     cp --no-preserve=mode -r $dir $out
     cd $out
   '';
-  processTarball = url: processDirectory (fetchTarball url);
+  processTarball = url: runCommand "snabb-tarball" { inherit url; } ''
+    mkdir -p $out && cd $out
+    ${curl}/bin/curl "$url" | tar -x -J -k
+  '';
 
 }
