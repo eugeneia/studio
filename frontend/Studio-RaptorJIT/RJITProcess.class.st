@@ -94,21 +94,27 @@ RJITProcess >> gtInspectorTraceMapIn: composite [
 { #category : #'instance creation' }
 RJITProcess >> gtInspectorVMProfilesIn: composite [
 	<gtInspectorPresentationOrder: 5>
-	| w percent |
+	| w fmtPct percent samples |
 	w := 50. "width of numeric columns"
 	^ composite tabulator
 		title: 'VM Profile';
 		with: [ :t |
 			t row: #profiles; row: #locations; row: #traces.
 			t transmit to: #profiles; andShow: [ :a |
+				fmtPct := [ :pct |
+					(pct round: 1) asString , '%' ].
 				percent := [ :sel |
 					[ :obj |
-						[ ((obj perform: sel) round: 1) asString , '%' ] on: ZeroDivide do: [ '-' ] ] ].
+						[ fmtPct value: (obj perform: sel) ] on: ZeroDivide do: [ '-' ] ] ].
+				samples := [ :sel |
+					[ :obj |
+						(obj perform: sel) asString ,
+			  				' (' , (fmtPct value: (obj perform: sel) / self totalSamples * 100) , ')' ] ].
 				a fastTable
 					title: 'Profiler datasets (VMProfile)';
 					display: #vmprofiles;
 					column: 'Profile' evaluated: #name width: 100;
-					column: 'Samples' evaluated: #total width: 60
+					column: 'Samples' evaluated: (samples value: #total) width: 80
 						tags: nil sortedBy: [ :x :y | x total > y total ];
 					column: 'Mcode' evaluated: (percent value: #mcodePercent) width: w
 						tags: nil sortedBy: [ :x :y | x mcode > y mcode ];
