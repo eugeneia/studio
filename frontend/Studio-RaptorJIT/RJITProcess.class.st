@@ -109,7 +109,8 @@ RJITProcess >> gtInspectorVMProfilesIn: composite [
 				samples := [ :sel |
 					[ :obj |
 						(obj perform: sel) asString ,
-			  				' (' , (fmtPct value: (obj perform: sel) / self totalSamples * 100) , ')' ] ].
+			  				([ ' (' , (fmtPct value: (obj perform: sel) / self totalSamples * 100) , ')' ]
+								on: ZeroDivide do: [ '' ]) ] ].
 				a fastTable
 					title: 'Profiler datasets (VMProfile)';
 					display: #vmprofiles;
