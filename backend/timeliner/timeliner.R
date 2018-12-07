@@ -40,12 +40,15 @@ export_graph_or_data <- function (result, outdir) {
 # ------------------------------------------------------------
 
 # Read a timeline file into a data frame.
-read_timeline <- function(filename) {
+read_timeline <- function(filename,
+                          pid="unknown-process", version="unknown-version") {
   tl <- read_binary_timeline(filename)
   tl$numa <- as.factor(tl$numa)
   tl$core <- as.factor(tl$core)
   tl$unixtime <- calculate_unixtime(tl)
   tl$cycles <- calculate_cycles(tl)
+  tl$pid <- pid
+  tl$version <- version
   # Sort entries by unix time. Should roughly take care of log wrap-around.
   # See FIXME comment in unixtime() though.
   #tl <- arrange(tl, unixtime)
@@ -177,7 +180,8 @@ breaths <- function(tl) {
     filter(grepl("breath_end", event)) %>%
     na.omit() %>%
     select(unixtime, cycles, numa, core,
-           breath, total_packets, total_bytes, total_ethbits, packets, bytes)
+           breath, total_packets, total_bytes, total_ethbits, packets, bytes,
+           pid, version)
 }
 
 # Create a data frame with one row for each app callback.
@@ -191,7 +195,8 @@ callbacks <- function(tl) {
     na.omit() %>%
     select(unixtime, cycles, numa, core,
            event, packets, bytes,
-           inpackets, inbytes, outpackets, outbytes, dropped, dropbytes)
+           inpackets, inbytes, outpackets, outbytes, dropped, dropbytes,
+           pid, version)
 }
 
 # Create a data frame with one row for each event (relative to breath_start.)
@@ -199,7 +204,8 @@ events <- function(tl) {
   tl %>%
     filter(cycles > 0) %>%
     select(unixtime, cycles, numa, core, event, level,
-           arg0, arg1, arg2, arg3, arg4, arg5)
+           arg0, arg1, arg2, arg3, arg4, arg5,
+           pid, version)
 }
 
 # ------------------------------------------------------------
@@ -291,9 +297,10 @@ breath_duration <- function (br=breath_summary,
   high <- quantile(s$cycles, phigh)
   low <- quantile(s$cycles, plow)
   d <- filter(s, cycles >= low & cycles <= high)
-  ggplot(d, aes(y = cycles, x = packets)) +
+  ggplot(d, aes(y = cycles, x = packets, color = version)) +
     scale_y_continuous(labels = scales::comma) +
-    geom_point(color="blue", alpha=0.25, shape=1) +
+    geom_point(alpha=0.25, shape=1) +
+    facet_wrap(~ pid, scales="free") +
     labs(title = "Breath duration",
          subtitle = paste("Breaths that took between ", scales::comma(low),
                           " and ", scales::comma(high), " cycles ",
@@ -314,10 +321,11 @@ breath_efficiency <- function (br=breath_summary, start=0,
   high <- quantile(s$cpp, phigh)
   low <- quantile(s$cpp, plow)
   d <- filter(s, cpp >= low & cpp <= high)
-  ggplot(d, aes(y = cpp, x = packets)) +
+  ggplot(d, aes(y = cpp, x = packets, color = version)) +
     scale_y_continuous(labels = scales::comma) +
-    geom_point(color="blue", alpha=0.25, shape=1) +
+    geom_point(alpha=0.25, shape=1) +
     geom_smooth(se=F, weight=1, alpha=0.1) +
+    facet_wrap(~ pid, scales="free") +
     labs(subtitle = paste("Breaths that took between ", scales::comma(low),
                           " and ", scales::comma(high), " cycles/packet ",
                           "(", scales::percent(nrow(d)/nrow(s)),
@@ -338,9 +346,9 @@ callback_efficiency <- function (cb=callback_summary, pattern="",
   high <- quantile(s$cpp, phigh)
   low <- quantile(s$cpp, plow)
   d <- filter(s, cpp >= low & cpp <= high)
-  ggplot(d, aes(y = cpp, x = packets)) +
+  ggplot(d, aes(y = cpp, x = packets, color = version)) +
     scale_y_continuous(labels = scales::comma) +
-    geom_point(color="blue", alpha=0.25, shape=1) +
+    geom_point(alpha=0.25, shape=1) +
     geom_smooth(se=F, weight=1, alpha=0.1) +
     facet_wrap(~ event, scales="free") +
     labs(subtitle = paste("Callbacks that took between ", scales::comma(low),
@@ -367,6 +375,7 @@ event_lag <- function (ev=event_summary, pattern="",
          else { scale_y_continuous(labels=scales::comma)}) +
     geom_boxplot() +
     coord_flip() +
+    facet_wrap(pid ~ version, scales="free") +
     theme(legend.position="bottom") +
     labs(subtitle = "Event lag (relative to last event >= level)",
          y = "cycles (lag)")
