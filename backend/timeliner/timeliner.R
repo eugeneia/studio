@@ -104,6 +104,7 @@ read_binary_timeline <- function(filename) {
     filter(message != "") %>%
     mutate(summary = str_extract(message, "^[^\n]+"),
            level = as.integer(str_extract(summary, "^[0-9]")),
+           rate = as.integer(gsub("^[0-9],([0-9])\\|.*", "\\1", summary)),
            event = gsub("^[0-9],[0-9]\\|([^:]+):.*", "\\1", summary))
   # Combine messages with events
   left_join(tl, messages, by="msgid")
@@ -203,7 +204,7 @@ callbacks <- function(tl) {
 events <- function(tl) {
   tl %>%
     filter(cycles > 0) %>%
-    select(unixtime, cycles, numa, core, event, level,
+    select(unixtime, cycles, numa, core, event, level, rate,
            arg0, arg1, arg2, arg3, arg4, arg5,
            pid, version)
 }
@@ -347,6 +348,7 @@ callback_efficiency <- function (cb=callback_summary, pattern="",
   low <- quantile(s$cpp, plow)
   d <- filter(s, cpp >= low & cpp <= high)
   ggplot(d, aes(y = cpp, x = packets, color = version)) +
+    scale_colour_gradient(low = "lightblue", high = "black") +
     scale_y_continuous(labels = scales::comma) +
     geom_point(alpha=0.25, shape=1) +
     geom_smooth(se=F, weight=1, alpha=0.1) +
@@ -370,7 +372,7 @@ event_lag <- function (ev=event_summary, pattern="",
     filter(grepl(pattern, event) &
              (is.na(t) | (t >= start & (!end | t <= end))) &
              cycles >= minl & (!maxl | cycles <= maxl))
-  ggplot(d, aes(x = event, y = cycles, color = level)) +
+  ggplot(d, aes(x = event, y = cycles, color = rate)) +
     (if (log) { scale_y_log10(labels=scales::comma) }
          else { scale_y_continuous(labels=scales::comma)}) +
     geom_boxplot() +
