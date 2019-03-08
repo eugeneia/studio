@@ -348,7 +348,6 @@ callback_efficiency <- function (cb=callback_summary, pattern="",
   low <- quantile(s$cpp, plow)
   d <- filter(s, cpp >= low & cpp <= high)
   ggplot(d, aes(y = cpp, x = packets, color = version)) +
-    scale_colour_gradient(low = "lightblue", high = "black") +
     scale_y_continuous(labels = scales::comma) +
     geom_point(alpha=0.25, shape=1) +
     geom_smooth(se=F, weight=1, alpha=0.1) +
