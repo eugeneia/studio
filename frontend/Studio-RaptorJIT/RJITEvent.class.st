@@ -4,7 +4,8 @@ Class {
 	#instVars : [
 		'jitState',
 		'flashback',
-		'number'
+		'number',
+		'nanotime'
 	],
 	#category : #'Studio-RaptorJIT'
 }
@@ -70,6 +71,16 @@ RJITEvent >> jitState [
 ]
 
 { #category : #accessing }
+RJITEvent >> nanotime [
+	^ nanotime 
+]
+
+{ #category : #accessing }
+RJITEvent >> nanotime: anInteger [ 
+	nanotime := anInteger
+]
+
+{ #category : #accessing }
 RJITEvent >> number: anInteger [ 
 	number := anInteger
 ]
@@ -83,4 +94,9 @@ RJITEvent >> numberOfBytecodes [
 RJITEvent >> startSourceLine [
 	^ jitState startSourceLine.
 
+]
+
+{ #category : #accessing }
+RJITEvent >> timeStamp [
+	^ (Time new seconds: (nanotime / 1e9 roundTo: 1)) print24
 ]

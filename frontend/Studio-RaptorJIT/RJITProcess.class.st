@@ -52,12 +52,13 @@ RJITProcess >> fromPath: aPath [
 { #category : #accessing }
 RJITProcess >> gtInspectorEventsIn: composite [
 	<gtInspectorPresentationOrder: 6>
-	composite fastList
+	composite fastTable
 		title: 'Events';
 		display: [ self auditLog events reverse ];
-		format: [ :e |
-			"Catch errors."
-			[ e printString ] on: Error do: [ :err | '<Decoding error: ', err printString, '>' ] ].
+		column: 'Time' evaluated: #timeStamp width: 100 tags: nil;
+		column: 'Description'
+			evaluated: [ :e | [ e printString ] on: Error do: [ :err | '<Decoding error: ', err printString, '>' ] ]
+			width: 800.
 
 ]
 

@@ -8,7 +8,8 @@ Class {
 		'traces',
 		'irModes',
 		'ctypes',
-		'process'
+		'process',
+		'nsStart'
 	],
 	#category : #'Studio-RaptorJIT'
 }
@@ -34,6 +35,7 @@ RJITAuditLog >> addDWARF: byteArray [
 RJITAuditLog >> addEvent: dict [
 	| event |
 	event := self makeEventFrom: dict.
+	event nanotime: (self nextNanotime: (dict at: 'nanotime')).
 	event number: events size + 1.
 	events add: event.
 ]
@@ -141,6 +143,16 @@ RJITAuditLog >> makeEventFrom: dict [
 	event = 'new_ctypeid' ifTrue: [ ^RJITNewCTypeIDEvent new from: dict flashback: flashback ].
    ^RJITUnknownEvent new from: dict flashback: flashback.
 
+]
+
+{ #category : #initialization }
+RJITAuditLog >> nextNanotime: ns [
+	nsStart ifNil: [ 
+		nsStart := ns.
+		^ 0
+		 ].
+	^ ns - nsStart
+	
 ]
 
 { #category : #accessing }
