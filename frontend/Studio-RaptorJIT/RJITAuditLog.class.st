@@ -36,6 +36,7 @@ RJITAuditLog >> addEvent: dict [
 	| event |
 	event := self makeEventFrom: dict.
 	event nanotime: (self nextNanotime: (dict at: 'nanotime')).
+	event isTraceFlushEvent ifTrue: [ self coalesceEvents ].
 	event number: events size + 1.
 	events add: event.
 ]
@@ -61,6 +62,19 @@ RJITAuditLog >> addRecord: dict [
    type = 'event' ifTrue:  [ self addEvent: dict ].
    type = 'memory' ifTrue: [ self addMemory: dict ].
 	type = 'blob' ifTrue: [ self addBlob: dict ].
+]
+
+{ #category : #initialization }
+RJITAuditLog >> coalesceEvents [
+	"Coalesce events prior to flush events."
+	| oldEvents |	
+	oldEvents := events.
+	events := OrderedCollection new.
+	oldEvents do: [ :event |
+		(event isTraceEvent) ifFalse: [
+			event number: events size + 1.
+			events add: event. ]
+		]
 ]
 
 { #category : #visualization }
@@ -141,6 +155,7 @@ RJITAuditLog >> makeEventFrom: dict [
    event = 'trace_abort' ifTrue: [ ^RJITTraceAbortEvent new from: dict flashback: flashback ].
 	event = 'new_prototype' ifTrue: [  ^RJITNewPrototypeEvent new from: dict flashback: flashback ].
 	event = 'new_ctypeid' ifTrue: [ ^RJITNewCTypeIDEvent new from: dict flashback: flashback ].
+	event = 'trace_flushall' ifTrue: [ ^RJITTraceFlushAllEvent new from: dict flashback: flashback ].
    ^RJITUnknownEvent new from: dict flashback: flashback.
 
 ]

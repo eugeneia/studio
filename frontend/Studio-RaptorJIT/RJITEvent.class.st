@@ -65,6 +65,11 @@ RJITEvent >> isTraceEvent [
 	^ false
 ]
 
+{ #category : #testing }
+RJITEvent >> isTraceFlushEvent [
+	^ false
+]
+
 { #category : #accessing }
 RJITEvent >> jitState [
 	^ jitState
